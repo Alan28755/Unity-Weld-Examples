@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using UnityEditor;
 using UnityEngine;
 using UnityWeld.Binding.Exceptions;
 using UnityWeld.Binding.Internal;
@@ -23,41 +25,101 @@ namespace UnityWeld.Binding
             Connect();
         }
 
+        protected void Reset()
+        {
+            InitViewModelsDic();
+        }
+
+        protected static Dictionary<string, object> viewModels;
+
         /// <summary>
-        /// Scan up the hierarchy and find a view model that corresponds to the specified name.
+        /// Store the viewModels in current scene
+        /// </summary>
+        public static Dictionary<string, object> ViewModels
+        {
+            get
+            {
+                if (viewModels != null)
+                    return viewModels;
+
+                viewModels = new Dictionary<string, object>();
+                InitViewModelsDic();
+                return viewModels;
+            }
+        }
+
+        /// <summary>
+        /// Find the viewModels in current scene
+        /// </summary>
+#if UNITY_EDITOR
+        [MenuItem("Tools/InitViewModelsDic")]
+#endif
+        public static void InitViewModelsDic()
+        {
+            viewModels ??= new Dictionary<string, object>();
+            viewModels.Clear();
+            IEnumerable<Transform> transforms =
+                GameObject.FindObjectsOfType<GameObject>(true).Select(obj => obj.transform);
+            foreach (var trans in transforms)
+            {
+                var components = trans.GetComponents<MonoBehaviour>();
+                foreach (var component in components)
+                {
+                    if (component == null)
+                    {
+                        continue;
+                    }
+
+                    // Case where a ViewModelBinding is used to bind a non-MonoBehaviour class.
+                    var viewModelBinding = component as IViewModelProvider;
+                    if (viewModelBinding != null)
+                    {
+                        var viewModelTypeName = viewModelBinding.GetViewModelTypeName();
+                        // Ignore view model bindings that haven't been set up yet.
+                        if (string.IsNullOrEmpty(viewModelTypeName))
+                        {
+                            continue;
+                        }
+
+                        string name = viewModelTypeName;
+                        if (name.StartsWith("UnityEngine."))
+                        {
+                            name = name.Substring(name.LastIndexOf('.') + 1);
+                        }
+
+                        if (!viewModels.ContainsKey(name))
+                            viewModels.Add(name, viewModelBinding.GetViewModel());
+                        // Debug.Log(name);
+                    }
+                    else if (component.GetType().GetCustomAttributes(typeof(BindingAttribute), false).Any())
+                    {
+                        // Case where we are binding to an existing MonoBehaviour.
+                        string name = component.GetType().Name;
+                        if (name.StartsWith("UnityEngine."))
+                        {
+                            name = name.Substring(name.LastIndexOf('.') + 1);
+                        }
+
+                        if (!viewModels.ContainsKey(name))
+                            viewModels.Add(name, component);
+                        // Debug.Log(name);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// find a view model that corresponds to the specified name.
         /// </summary>
         private object FindViewModel(string viewModelName)
         {
-            var trans = transform;
-            while (trans != null)
+            if (ViewModels.TryGetValue(viewModelName, out var viewModel))
             {
-                var components = trans.GetComponents<MonoBehaviour>();
-                var monoBehaviourViewModel = components
-                    .FirstOrDefault(component => component.GetType().ToString() == viewModelName);
-                if (monoBehaviourViewModel != null)
-                {
-                    return monoBehaviourViewModel;
-                }
-
-                var providedViewModel = components
-                    .Select(component => component as IViewModelProvider)
-                    .Where(component => component != null)
-                    .FirstOrDefault(
-                        viewModelBinding => viewModelBinding.GetViewModelTypeName() == viewModelName && 
-#pragma warning disable 252,253 // Warning says unintended reference comparison, but we do want to compare references
-                        (object)viewModelBinding != this
-#pragma warning restore 252,253
-                    );
-
-                if (providedViewModel != null)
-                {
-                    return providedViewModel.GetViewModel();
-                }
-
-                trans = trans.parent;
+                return viewModel;
             }
 
-            throw new ViewModelNotFoundException(string.Format("Tried to get view model {0} but it could not be found on "
+            throw new ViewModelNotFoundException(string.Format(
+                "Tried to get view model {0} but it could not be found on "
                 + "object {1}. Check that a ViewModelBinding for that view model exists further up in "
                 + "the scene hierarchy. ", viewModelName, gameObject.name)
             );
@@ -81,7 +143,8 @@ namespace UnityWeld.Binding
 
             if (!typeof(IAdapter).IsAssignableFrom(adapterType))
             {
-                throw new InvalidAdapterException(string.Format("Type '{0}' does not implement IAdapter and cannot be used as an adapter.", adapterTypeName));
+                throw new InvalidAdapterException(string.Format(
+                    "Type '{0}' does not implement IAdapter and cannot be used as an adapter.", adapterTypeName));
             }
 
             return (IAdapter)Activator.CreateInstance(adapterType);
@@ -90,7 +153,8 @@ namespace UnityWeld.Binding
         /// <summary>
         /// Make a property end point for a property on the view model.
         /// </summary>
-        protected PropertyEndPoint MakeViewModelEndPoint(string viewModelPropertyName, string adapterTypeName, AdapterOptions adapterOptions)
+        protected PropertyEndPoint MakeViewModelEndPoint(string viewModelPropertyName, string adapterTypeName,
+            AdapterOptions adapterOptions)
         {
             string propertyName;
             object viewModel;
@@ -104,7 +168,8 @@ namespace UnityWeld.Binding
         /// <summary>
         /// Parse an end-point reference including a type name and member name separated by a period.
         /// </summary>
-        protected static void ParseEndPointReference(string endPointReference, out string memberName, out string typeName)
+        protected static void ParseEndPointReference(string endPointReference, out string memberName,
+            out string typeName)
         {
             var lastPeriodIndex = endPointReference.LastIndexOf('.');
             if (lastPeriodIndex == -1)
@@ -123,6 +188,7 @@ namespace UnityWeld.Binding
             {
                 typeName = typeName.Substring(typeName.LastIndexOf('.') + 1);
             }
+
             if (typeName.Length == 0 || memberName.Length == 0)
             {
                 throw new InvalidEndPointException(
@@ -135,7 +201,8 @@ namespace UnityWeld.Binding
         /// <summary>
         /// Parse an end-point reference and search up the hierarchy for the named view-model.
         /// </summary>
-        protected void ParseViewModelEndPointReference(string endPointReference, out string memberName, out object viewModel)
+        protected void ParseViewModelEndPointReference(string endPointReference, out string memberName,
+            out object viewModel)
         {
             string viewModelName;
             ParseEndPointReference(endPointReference, out memberName, out viewModelName);
@@ -158,7 +225,8 @@ namespace UnityWeld.Binding
             view = GetComponent(boundComponentType);
             if (view == null)
             {
-                throw new ComponentNotFoundException("Failed to find component on current game object: " + boundComponentType);
+                throw new ComponentNotFoundException("Failed to find component on current game object: " +
+                                                     boundComponentType);
             }
         }
 

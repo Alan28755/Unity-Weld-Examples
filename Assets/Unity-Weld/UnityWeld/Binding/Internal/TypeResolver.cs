@@ -157,45 +157,13 @@ namespace UnityWeld.Binding.Internal
         /// </summary>
         private static IEnumerable<Type> FindAvailableViewModelTypes(AbstractMemberBinding memberBinding)
         {
-            var foundAtLeastOneBinding = false;
-
-            var trans = memberBinding.transform;
-            while (trans != null)
+            var foundAtLeastOneBinding = AbstractMemberBinding.ViewModels.Count!=0;
+            if (foundAtLeastOneBinding)
             {
-                var components = trans.GetComponents<MonoBehaviour>();
-                foreach (var component in components)
+                foreach (var viewModel in AbstractMemberBinding.ViewModels)
                 {
-                    // Can't bind to self or null
-                    if (component == null || component == memberBinding)
-                    {
-                        continue;
-                    }
-
-                    // Case where a ViewModelBinding is used to bind a non-MonoBehaviour class.
-                    var viewModelBinding = component as IViewModelProvider;
-                    if (viewModelBinding != null)
-                    {
-                        var viewModelTypeName = viewModelBinding.GetViewModelTypeName();
-                        // Ignore view model bindings that haven't been set up yet.
-                        if (string.IsNullOrEmpty(viewModelTypeName))
-                        {
-                            continue;
-                        }
-
-                        foundAtLeastOneBinding = true;
-
-                        yield return GetViewModelType(viewModelBinding.GetViewModelTypeName());
-                    }
-                    else if (component.GetType().GetCustomAttributes(typeof(BindingAttribute), false).Any())
-                    {
-                        // Case where we are binding to an existing MonoBehaviour.
-                        foundAtLeastOneBinding = true;
-
-                        yield return component.GetType();
-                    }
+                    yield return viewModel.Value.GetType();
                 }
-
-                trans = trans.parent;
             }
 
             if (!foundAtLeastOneBinding)
