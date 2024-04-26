@@ -82,11 +82,6 @@ namespace UnityWeld.Binding
                         }
 
                         string name = viewModelTypeName;
-                        if (name.StartsWith("UnityEngine."))
-                        {
-                            name = name.Substring(name.LastIndexOf('.') + 1);
-                        }
-
                         if (!viewModels.ContainsKey(name))
                             viewModels.Add(name, viewModelBinding.GetViewModel());
                         // Debug.Log(name);
@@ -94,12 +89,7 @@ namespace UnityWeld.Binding
                     else if (component.GetType().GetCustomAttributes(typeof(BindingAttribute), false).Any())
                     {
                         // Case where we are binding to an existing MonoBehaviour.
-                        string name = component.GetType().Name;
-                        if (name.StartsWith("UnityEngine."))
-                        {
-                            name = name.Substring(name.LastIndexOf('.') + 1);
-                        }
-
+                        string name = component.GetType().FullName;
                         if (!viewModels.ContainsKey(name))
                             viewModels.Add(name, component);
                         // Debug.Log(name);
